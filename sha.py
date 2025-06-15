@@ -1,8 +1,3 @@
-# requirements.txt
-streamlit>=1.28.0
-requests>=2.31.0
-python-dotenv>=1.0.0
-
 # .streamlit/config.toml
 [theme]
 primaryColor = "#ff6b6b"
