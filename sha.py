@@ -59,67 +59,207 @@ class HuggingFaceChatClient:
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json"
         }
+        
+        # Enhanced system prompts for different model types
+        self.system_prompts = {
+            "microsoft/DialoGPT-medium": "You are a helpful, friendly, and engaging conversational AI assistant. Provide thoughtful, coherent responses while maintaining a natural conversation flow.",
+            "microsoft/DialoGPT-large": "You are a sophisticated conversational AI assistant. Engage in meaningful dialogue, provide detailed and helpful responses, and maintain context throughout the conversation.",
+            "facebook/blenderbot-400M-distill": "You are BlenderBot, a knowledgeable and empathetic conversational AI. Provide informative, engaging responses while being personable and understanding.",
+            "microsoft/GODEL-v1_1-large-seq2seq": "You are GODEL, a goal-oriented dialog assistant. Help users achieve their objectives through clear, structured, and actionable responses.",
+            "bigscience/bloom-560m": "You are BLOOM, a multilingual AI assistant. Provide helpful, accurate, and culturally aware responses in the user's preferred language.",
+            "Qwen/Qwen2.5-0.5B-Instruct": "You are Qwen, a helpful AI assistant created by Alibaba Cloud. Provide accurate, detailed, and contextually appropriate responses to help users with their questions and tasks.",
+            "meta-llama/Llama-2-7b-chat-hf": "You are Llama, a helpful and harmless AI assistant. Provide thoughtful, accurate responses while being respectful and following ethical guidelines.",
+            "mistralai/Mistral-7B-Instruct-v0.1": "You are Mistral, an AI assistant designed to be helpful, harmless, and honest. Provide clear, accurate, and useful responses to user queries.",
+            "google/flan-t5-large": "You are Flan-T5, a text-to-text AI model. Provide helpful and accurate responses by understanding the user's intent and generating appropriate text.",
+            "EleutherAI/gpt-j-6b": "You are GPT-J, a large language model. Provide helpful, creative, and contextually appropriate responses while maintaining a conversational tone.",
+            "stabilityai/stablelm-tuned-alpha-7b": "You are StableLM, a helpful AI assistant. Provide clear, informative, and engaging responses while being reliable and trustworthy.",
+            "default": "You are a helpful AI assistant. Provide clear, accurate, and helpful responses to user queries while maintaining a friendly and professional tone."
+        }
+    
+    def _get_model_specific_params(self, model_name: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
+        """Get model-specific parameters for optimal performance"""
+        base_params = {
+            "temperature": temperature,
+            "do_sample": True,
+            "return_full_text": False
+        }
+        
+        # Model-specific parameter optimization
+        if "DialoGPT" in model_name:
+            return {
+                **base_params,
+                "max_length": min(max_tokens, 1000),
+                "pad_token_id": 50256,
+                "eos_token_id": 50256,
+                "repetition_penalty": 1.1,
+                "length_penalty": 1.0,
+                "no_repeat_ngram_size": 2
+            }
+        elif "blenderbot" in model_name.lower():
+            return {
+                **base_params,
+                "max_length": min(max_tokens, 512),
+                "num_beams": 4,
+                "early_stopping": True,
+                "repetition_penalty": 1.2
+            }
+        elif "GODEL" in model_name:
+            return {
+                **base_params,
+                "max_length": min(max_tokens, 512),
+                "num_beams": 2,
+                "repetition_penalty": 1.1,
+                "length_penalty": 0.8
+            }
+        elif "bloom" in model_name.lower():
+            return {
+                **base_params,
+                "max_new_tokens": min(max_tokens, 256),
+                "top_p": 0.9,
+                "top_k": 50,
+                "repetition_penalty": 1.1
+            }
+        elif "Qwen" in model_name:
+            return {
+                **base_params,
+                "max_new_tokens": min(max_tokens, 512),
+                "top_p": 0.8,
+                "top_k": 50,
+                "repetition_penalty": 1.05
+            }
+        elif "Llama" in model_name or "llama" in model_name.lower():
+            return {
+                **base_params,
+                "max_new_tokens": min(max_tokens, 512),
+                "top_p": 0.9,
+                "top_k": 40,
+                "repetition_penalty": 1.1
+            }
+        elif "Mistral" in model_name or "mistral" in model_name.lower():
+            return {
+                **base_params,
+                "max_new_tokens": min(max_tokens, 512),
+                "top_p": 0.9,
+                "top_k": 50,
+                "repetition_penalty": 1.05
+            }
+        elif "flan-t5" in model_name.lower():
+            return {
+                **base_params,
+                "max_length": min(max_tokens, 512),
+                "num_beams": 4,
+                "early_stopping": True,
+                "repetition_penalty": 1.1
+            }
+        elif "gpt-j" in model_name.lower():
+            return {
+                **base_params,
+                "max_new_tokens": min(max_tokens, 512),
+                "top_p": 0.9,
+                "top_k": 50,
+                "repetition_penalty": 1.1
+            }
+        elif "stablelm" in model_name.lower():
+            return {
+                **base_params,
+                "max_new_tokens": min(max_tokens, 512),
+                "top_p": 0.9,
+                "top_k": 40,
+                "repetition_penalty": 1.05
+            }
+        else:
+            # Default parameters for unknown models
+            return {
+                **base_params,
+                "max_length": max_tokens,
+                "top_p": 0.9,
+                "top_k": 50
+            }
     
     def chat_completion(self, messages: List[Dict[str, str]], 
                        max_tokens: int = 512, 
                        temperature: float = 0.7,
                        stream: bool = False) -> Dict[str, Any]:
-        """Send chat completion request to Hugging Face API"""
+        """Send chat completion request to Hugging Face API with enhanced error handling"""
         
-        # If using a specific model endpoint
-        if self.model_name:
-            url = f"{self.base_url}/{self.model_name}"
-        else:
-            # Default to a popular chat model if none specified
-            url = f"{self.base_url}/microsoft/DialoGPT-medium"
+        # Validate model name
+        if not self.model_name or len(self.model_name.strip()) < 3:
+            return {"error": "Invalid model name provided"}
         
-        # Format messages for the API
+        # Clean model name
+        model_name = self.model_name.strip()
+        url = f"{self.base_url}/{model_name}"
+        
+        # Format messages for the API with enhanced system prompt
         if len(messages) > 0:
-            # For most HF models, we need to format the conversation
-            conversation = self._format_conversation(messages)
+            conversation = self._format_conversation_with_system_prompt(messages, model_name)
+            
+            # Get model-specific parameters
+            parameters = self._get_model_specific_params(model_name, max_tokens, temperature)
             
             payload = {
                 "inputs": conversation,
-                "parameters": {
-                    "max_length": max_tokens,
-                    "temperature": temperature,
-                    "do_sample": True,
-                    "return_full_text": False
+                "parameters": parameters,
+                "options": {
+                    "wait_for_model": True,
+                    "use_cache": False
                 }
             }
         else:
             payload = {"inputs": "Hello! How can I help you today?"}
         
         try:
-            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
-            response.raise_for_status()
+            st.info(f"Making request to: {url}")  # Debug info
+            response = requests.post(url, headers=self.headers, json=payload, timeout=60)
+            
+            # Enhanced error handling
+            if response.status_code == 400:
+                error_detail = response.json().get('error', 'Bad request')
+                return {"error": f"Bad request: {error_detail}. Please check your input parameters."}
+            elif response.status_code == 401:
+                return {"error": "Authentication failed. Please check your API token."}
+            elif response.status_code == 403:
+                return {"error": "Access denied. Please verify your API token permissions or model access rights."}
+            elif response.status_code == 404:
+                return {"error": f"Model '{model_name}' not found. Please verify the model name exists on Hugging Face Hub."}
+            elif response.status_code == 429:
+                return {"error": "Rate limit exceeded. Please wait a moment before making another request."}
+            elif response.status_code == 500:
+                return {"error": "Internal server error. The model service is temporarily unavailable."}
+            elif response.status_code == 503:
+                retry_after = response.headers.get('Retry-After', '60')
+                return {"error": f"Model is currently loading or unavailable. Please try again in {retry_after} seconds."}
+            elif response.status_code == 504:
+                return {"error": "Request timeout. The model took too long to respond. Try reducing max_tokens or simplifying your input."}
+            
+            # Check for successful response
+            if not response.ok:
+                return {"error": f"HTTP {response.status_code}: {response.reason}"}
             
             result = response.json()
             
-            # Handle different response formats
-            if isinstance(result, list) and len(result) > 0:
-                if "generated_text" in result[0]:
-                    return {"response": result[0]["generated_text"]}
-                elif "text" in result[0]:
-                    return {"response": result[0]["text"]}
-            elif isinstance(result, dict):
-                if "generated_text" in result:
-                    return {"response": result["generated_text"]}
-                elif "text" in result:
-                    return {"response": result["text"]}
+            # Enhanced response processing
+            return self._process_model_response(result, model_name)
             
-            return {"response": "I'm here to help! What would you like to know?"}
-            
+        except requests.exceptions.Timeout:
+            return {"error": "Request timed out. The model service is taking too long to respond."}
+        except requests.exceptions.ConnectionError:
+            return {"error": "Connection error. Please check your internet connection and try again."}
         except requests.exceptions.RequestException as e:
-            st.error(f"API request failed: {str(e)}")
-            return {"error": str(e)}
+            return {"error": f"API request failed: {str(e)}"}
         except json.JSONDecodeError as e:
-            st.error(f"Failed to parse API response: {str(e)}")
-            return {"error": "Invalid API response"}
+            return {"error": f"Failed to parse API response. The service may be temporarily unavailable."}
+        except Exception as e:
+            return {"error": f"Unexpected error: {str(e)}"}
     
-    def _format_conversation(self, messages: List[Dict[str, str]]) -> str:
-        """Format conversation history for the API"""
-        formatted = ""
+    def _format_conversation_with_system_prompt(self, messages: List[Dict[str, str]], model_name: str) -> str:
+        """Format conversation history with enhanced system prompt for the API"""
+        
+        # Get appropriate system prompt
+        system_prompt = self.system_prompts.get(model_name, self.system_prompts["default"])
+        
+        formatted = f"System: {system_prompt}\n\n"
+        
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
@@ -132,6 +272,100 @@ class HuggingFaceChatClient:
         # Add prompt for next response
         formatted += "Assistant:"
         return formatted
+    
+    def _process_model_response(self, result: Any, model_name: str) -> Dict[str, Any]:
+        """Enhanced response processing for different model types"""
+        
+        try:
+            # Handle list responses (most common)
+            if isinstance(result, list) and len(result) > 0:
+                first_result = result[0]
+                
+                if isinstance(first_result, dict):
+                    # Check for generated_text
+                    if "generated_text" in first_result:
+                        response_text = first_result["generated_text"]
+                        return {"response": self._clean_response(response_text, model_name)}
+                    
+                    # Check for text field
+                    elif "text" in first_result:
+                        response_text = first_result["text"]
+                        return {"response": self._clean_response(response_text, model_name)}
+                    
+                    # Check for error in response
+                    elif "error" in first_result:
+                        return {"error": first_result["error"]}
+                
+                # Handle string response in list
+                elif isinstance(first_result, str):
+                    return {"response": self._clean_response(first_result, model_name)}
+            
+            # Handle dictionary responses
+            elif isinstance(result, dict):
+                if "generated_text" in result:
+                    response_text = result["generated_text"]
+                    return {"response": self._clean_response(response_text, model_name)}
+                elif "text" in result:
+                    response_text = result["text"]
+                    return {"response": self._clean_response(response_text, model_name)}
+                elif "error" in result:
+                    return {"error": result["error"]}
+            
+            # Handle direct string response
+            elif isinstance(result, str):
+                return {"response": self._clean_response(result, model_name)}
+            
+            # Fallback response
+            return {"response": "I'm here to help! What would you like to know?"}
+            
+        except Exception as e:
+            return {"error": f"Error processing model response: {str(e)}"}
+    
+    def _clean_response(self, response_text: str, model_name: str) -> str:
+        """Clean and format the response text based on model type"""
+        
+        if not response_text:
+            return "I apologize, but I couldn't generate a proper response. Please try rephrasing your question."
+        
+        # Remove common artifacts and clean up response
+        cleaned = response_text.strip()
+        
+        # Remove system prompt remnants
+        if cleaned.startswith("System:"):
+            parts = cleaned.split("Assistant:", 1)
+            if len(parts) > 1:
+                cleaned = parts[1].strip()
+        
+        # Remove conversation markers that might leak through
+        cleaned = cleaned.replace("Human:", "").replace("Assistant:", "").strip()
+        
+        # Model-specific cleaning
+        if "DialoGPT" in model_name:
+            # Remove special tokens that might appear
+            cleaned = cleaned.replace("<|endoftext|>", "").strip()
+        
+        elif "blenderbot" in model_name.lower():
+            # BlenderBot sometimes repeats the input
+            lines = cleaned.split('\n')
+            if len(lines) > 1:
+                cleaned = lines[-1].strip()
+        
+        elif "Qwen" in model_name:
+            # Remove Qwen-specific tokens
+            cleaned = cleaned.replace("<|im_start|>", "").replace("<|im_end|>", "").strip()
+        
+        elif "Llama" in model_name or "llama" in model_name.lower():
+            # Remove Llama-specific tokens
+            cleaned = cleaned.replace("[INST]", "").replace("[/INST]", "").strip()
+        
+        # Remove excessive whitespace and empty lines
+        cleaned = '\n'.join(line.strip() for line in cleaned.split('\n') if line.strip())
+        
+        # Ensure we have a meaningful response
+        if not cleaned or len(cleaned) < 3:
+            return "I understand your message, but I'm having trouble formulating a response right now. Could you please try asking in a different way?"
+        
+        return cleaned
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -187,13 +421,18 @@ def main():
         
         # Model selection
         model_options = {
-            "Custom Model": "",
-            "Qwen/Qwen2.5-Coder-32B-Instruct": "Qwen/Qwen2.5-Coder-32B-Instruct",
             "microsoft/DialoGPT-medium": "microsoft/DialoGPT-medium",
-            "microsoft/DialoGPT-large": "microsoft/DialoGPT-large",
+            "microsoft/DialoGPT-large": "microsoft/DialoGPT-large", 
             "facebook/blenderbot-400M-distill": "facebook/blenderbot-400M-distill",
             "microsoft/GODEL-v1_1-large-seq2seq": "microsoft/GODEL-v1_1-large-seq2seq",
-            "bigscience/bloom-560m": "bigscience/bloom-560m"
+            "bigscience/bloom-560m": "bigscience/bloom-560m",
+            "Qwen/Qwen2.5-0.5B-Instruct": "Qwen/Qwen2.5-0.5B-Instruct",
+            "meta-llama/Llama-2-7b-chat-hf": "meta-llama/Llama-2-7b-chat-hf",
+            "mistralai/Mistral-7B-Instruct-v0.1": "mistralai/Mistral-7B-Instruct-v0.1",
+            "google/flan-t5-large": "google/flan-t5-large",
+            "EleutherAI/gpt-j-6b": "EleutherAI/gpt-j-6b",
+            "stabilityai/stablelm-tuned-alpha-7b": "stabilityai/stablelm-tuned-alpha-7b",
+            "Custom Model": "custom"
         }
         
         selected_model = st.selectbox(
@@ -210,10 +449,16 @@ def main():
                 help="Enter your custom model name (e.g., username/model-name)",
                 key="custom_model_input"
             )
+            if not model_name.strip():
+                st.warning("Please enter a valid model name")
         else:
             model_name = model_options[selected_model]
-            if model_name:  # Only show info if model_name is not empty
-                st.info(f"Selected: {model_name}")
+            st.info(f"Selected: {model_name}")
+            
+        # Validate model name
+        if model_name and "/" not in model_name and selected_model != "Custom Model":
+            st.error("Invalid model format. Model name should be in format: username/model-name")
+            model_name = ""
         
         # Chat parameters
         st.subheader("Chat Parameters")
@@ -221,16 +466,21 @@ def main():
         temperature = st.slider("Temperature", min_value=0.1, max_value=2.0, value=0.7, step=0.1)
         
         # Initialize chat client
-        if api_token and st.button("Initialize Chat"):
+        if api_token and model_name and st.button("Initialize Chat"):
             try:
-                st.session_state.chat_client = HuggingFaceChatClient(
-                    api_token=api_token,
-                    model_name=model_name if model_name else None
-                )
-                st.session_state.model_loaded = True
-                st.success("Chat assistant initialized successfully!")
+                # Validate model name format
+                if selected_model != "Custom Model" or (selected_model == "Custom Model" and "/" in model_name):
+                    st.session_state.chat_client = HuggingFaceChatClient(
+                        api_token=api_token,
+                        model_name=model_name
+                    )
+                    st.session_state.model_loaded = True
+                    st.success("Chat assistant initialized successfully!")
+                else:
+                    st.error("Please provide a valid model name in format: username/model-name")
             except Exception as e:
                 st.error(f"Failed to initialize chat assistant: {str(e)}")
+                st.session_state.model_loaded = False
         
         # Clear chat button
         if st.button("Clear Chat History"):
@@ -247,12 +497,17 @@ def main():
             
             # Show model description
             model_descriptions = {
-                "Qwen/Qwen2.5-Coder-32B-Instruct": "🚀 Advanced coding assistant",
                 "microsoft/DialoGPT-medium": "💬 Conversational AI",
                 "microsoft/DialoGPT-large": "💬 Large conversational AI",
                 "facebook/blenderbot-400M-distill": "🤖 Facebook's chatbot",
                 "microsoft/GODEL-v1_1-large-seq2seq": "📝 Goal-oriented dialog",
-                "bigscience/bloom-560m": "🌸 Multilingual language model"
+                "bigscience/bloom-560m": "🌸 Multilingual language model",
+                "Qwen/Qwen2.5-0.5B-Instruct": "🚀 Alibaba's Qwen model",
+                "meta-llama/Llama-2-7b-chat-hf": "🦙 Meta's Llama 2 chat model",
+                "mistralai/Mistral-7B-Instruct-v0.1": "🌟 Mistral instruction model",
+                "google/flan-t5-large": "🔧 Google's Flan-T5 model",
+                "EleutherAI/gpt-j-6b": "⚡ EleutherAI's GPT-J model",
+                "stabilityai/stablelm-tuned-alpha-7b": "🎯 Stability AI's StableLM"
             }
             
             if model_name in model_descriptions:
