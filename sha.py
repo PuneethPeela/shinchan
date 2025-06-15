@@ -207,11 +207,13 @@ def main():
             model_name = st.text_input(
                 "Custom Model Name",
                 value=st.secrets.get("HF_MODEL_NAME", ""),
-                help="Enter your custom model name (e.g., username/model-name)"
+                help="Enter your custom model name (e.g., username/model-name)",
+                key="custom_model_input"
             )
         else:
             model_name = model_options[selected_model]
-            st.info(f"Selected: {model_name}")
+            if model_name:  # Only show info if model_name is not empty
+                st.info(f"Selected: {model_name}")
         
         # Chat parameters
         st.subheader("Chat Parameters")
@@ -292,7 +294,6 @@ def main():
     with col1:
         user_input = st.text_input(
             "Your message:",
-            key="user_input",
             placeholder="Type your message here...",
             label_visibility="collapsed"
         )
@@ -305,10 +306,6 @@ def main():
         # Add user message to chat history
         user_message = {"role": "user", "content": user_input.strip()}
         st.session_state.messages.append(user_message)
-        
-        # Display user message immediately
-        with chat_container:
-            display_chat_message(user_message)
         
         # Show typing indicator
         with st.spinner("AI is thinking..."):
@@ -335,9 +332,6 @@ def main():
                     
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}")
-        
-        # Clear input (this will happen on rerun)
-        st.session_state.user_input = ""
 
 if __name__ == "__main__":
     main()
